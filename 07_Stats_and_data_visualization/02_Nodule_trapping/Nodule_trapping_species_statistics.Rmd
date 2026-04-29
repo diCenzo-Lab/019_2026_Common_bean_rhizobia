@@ -1,0 +1,276 @@
+---
+title: "Nodule_trapping_species_statistics"
+output: html_document
+date: "2026-02-23"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+options(width=200)
+
+```
+
+# Nodule trapping statistics
+
+This document contains the code for running  the statistical analyses and data visualization for the nodule trapping data.
+
+# Load required libraries
+
+```{r Load libraries, results='hide', message=FALSE, warning=FALSE}
+
+library(lme4)
+library(phyloseq)
+library(car)
+library(emmeans)
+library(ggplot2)
+library(patchwork)
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(tibble)
+library(rcartocolor)
+
+```
+
+# Prepare a phyloseq object
+
+Generate a phyloseq object where each sample is one soil - host combination (so 36 total samples), and the abundance of each species per sample is provided.
+
+```{r Nodule trapping phyloseq object, results='hide', message=FALSE, warning=FALSE}
+
+# Load the isolate source information
+isolates <- read.table("isolate_source.txt",
+                       header = TRUE, row.names = NULL)
+
+# Count species abundance per sample
+isolates.grouped <- isolates %>%
+  group_by(Sample, Species_classification) %>%
+  summarize(counts = n())
+isolates.grouped.matrix <- isolates.grouped %>%
+  pivot_wider(
+    names_from = Sample,
+    values_from = counts
+  ) %>%
+  column_to_rownames("Species_classification") %>%
+  as.matrix()
+
+# Create the final OTU table
+otumat <- isolates.grouped.matrix
+otumat[is.na(otumat)] <- 0
+
+# Load the taxonomy table
+taxmat <- as.matrix(read.table("isolate_taxonomy.txt",
+                        header = TRUE, row.names = 1))
+
+# Load the sample metadata
+metadata <- read.table("sample_metadata.txt",
+                       header = TRUE, row.names = 1)
+
+# Combine the data into a phyloseq object
+OTU <- otu_table(otumat, taxa_are_rows = TRUE)
+TAX <- tax_table(taxmat)
+META <- sample_data(metadata)
+ps <- phyloseq(OTU, TAX, META)
+
+# Convert species abundances to percentages
+ps.rel <- transform_sample_counts(ps, function(x) x / sum(x))
+
+```
+
+# Statistical analysis of soil and trapping host on the composition of the recovered rhizobiial population 
+
+Now calculate Bray-Curtis distances and use to evaluate the impact of soil and host on the composition of the recovered rhizobial communities.
+
+```{r Nodule Bray-Curtis, results='hide', message=FALSE, warning=FALSE}
+
+# Calculate the bray curtis distances
+dist_bc <- phyloseq::distance(ps.rel, method = "bray")
+
+# Extract sample data
+meta <- data.frame(sample_data(ps.rel))
+
+```
+
+First test based on soil.
+
+```{r Nodule permdist-soil, results='hide', message=FALSE, warning=FALSE}
+
+# Perform a permutation test to test if the data meet the assumptions of PERMANOVA in terms of soil
+beta.bray <- betadisper(dist_bc, meta$Soil, type = "centroid", bias.adjust = TRUE)
+permdisp <- permutest(beta.bray, pairwise = TRUE, permutations = 10000)
+permdisp
+
+```
+
+Now test based on host.
+
+```{r Nodule permdist-host, results='hide', message=FALSE, warning=FALSE}
+
+# Perform a permutation test to test if the data meet the assumptions of PERMANOVA in terms of host
+beta.bray <- betadisper(dist_bc, meta$Host, type = "centroid", bias.adjust = TRUE)
+permdisp <- permutest(beta.bray, pairwise = TRUE, permutations = 10000)
+permdisp
+
+```
+
+Dispersion is not statistically different for the host genotype but does differ between soils, which means the results of PERMANOVA are not reliable. Nevertheless, run the PERMANOVA (accounting for soil and host) and pair it with a PCoA to visualize the data.
+
+```{r Nodule PERMANOVA, message=FALSE, warning=FALSE}
+
+# Run the PERMANOVA test
+adonis.bray <- adonis2(dist_bc ~ Soil + Host, data = meta, permutations = 10000, by = "margin")
+as.data.frame(adonis.bray)
+
+```
+
+Based on the PERMANOVA, there is a strong effect of soil but no effect of host genotype.
+
+Now run a capscale analysis since it is less sensitive to differences in dispersion and thus should be more appropriate than PERMANOVA in this case.
+
+```{r Nodule capscale, message=FALSE, warning=FALSE}
+
+# Set the formula for the model
+class(fo <- dist_bc ~ meta$Soil + meta$Host)
+
+# Run the capscale analysis followed by an ANOVA
+pso_cap <- ordinate(ps.rel, "CAP", "bray", formula=fo)
+anova(pso_cap, by = "margin", type = 2)
+
+```
+
+As before, the soil had a statistically significant effect on the recovered rhizobial population whereas the host genotype did not.
+
+# Prepare figures
+
+Create a multi-panel figure showing the diversity of rhizobia recovered according to soil and trapping cultivar.
+
+Start by creating an ordination plot from the PCoA data, although will ultimately use the ordination plot based on the capscale analysis in the manuscript.
+
+```{r Nodule PCoA, results='hide', message=FALSE, warning=FALSE}
+
+# Create a PCoA plot
+sample_data(ps.rel)$Soil <- factor(sample_data(ps.rel)$Soil, 
+                                        levels = c("GSC145", "GSC146", "GSC147", "GSC148",
+                                                   "GSC150", "GSC151", "GSC152", "GSC144",
+                                                   "GSC149"))
+sample_data(ps.rel)$Host <- factor(sample_data(ps.rel)$Host, 
+                                        levels = c("Commercial_navy", "Heritage_navy",
+                                                   "Commercial_kidney", "Heritage_kidney"))
+pso <- ordinate(ps.rel, "PCoA", "bray")
+var_explained <- pso$values$Relative_eig * 100
+ordplot5 <- plot_ordination(ps.rel, pso, type="samples", 
+                            color="Soil", shape="Host",
+                            axes = c(1,2))
+p.beta.pcoa <- ordplot5 +  theme_bw() + theme(text = element_text(size = 17), aspect.ratio = 1) + 
+  geom_point(size = 7) +
+  scale_colour_viridis_d(option="magma") + 
+  scale_shape_manual(values=c(16,15,17,18)) +
+  theme_bw() +
+  theme(text = element_text(size = 17),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "right") +
+  labs(x = paste0(" PC1 [", round(var_explained[1], 1), "%]"),
+       y = paste0(" PC2 [", round(var_explained[2], 1), "%]")) +
+  scale_x_continuous(lim=c(-0.60,0.60), breaks=c(-0.60,-0.30,0.00,0.30,0.60),
+                     labels = function(x) sprintf("%.2f", x)) +
+  scale_y_continuous(lim=c(-0.60,0.60), breaks=c(-0.60,-0.30,0.00,0.30,0.60),
+                     labels = function(x) sprintf("%.2f", x))
+p.beta.pcoa
+
+```
+
+Now make an ordination plot based on the capscale analysis.
+
+```{r Nodule capscale figure, results='hide', message=FALSE, warning=FALSE}
+
+# Get the relative eigenvalues
+all_eig <- eigenvals(pso_cap)
+rel_eig <- all_eig / sum(all_eig)
+var_explained <- round(rel_eig * 100, 1)
+
+# Plot the capscale results
+ordplot5 <- plot_ordination(ps.rel, pso_cap, type="samples", color="Soil",
+                            shape="Host", axes = c(1,2))
+p.beta.cap <- ordplot5 +  theme_bw() + theme(text = element_text(size = 17), aspect.ratio = 1) + 
+  geom_point(size = 7) +
+  scale_colour_viridis_d(option="magma") + 
+  scale_shape_manual(values=c(16,15,17,18)) +
+  theme_bw() +
+  theme(text = element_text(size = 17),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "right") +
+  labs(x = paste0(" CAP 1 [", round(var_explained[1], 1), "%]"),
+       y = paste0(" CAP 2 [", round(var_explained[2], 1), "%]")) +
+  scale_x_continuous(lim=c(-1.50,1.50), breaks=c(-1.50,-0.75,0.00,0.75,1.5),
+                     labels = function(x) sprintf("%.2f", x)) +
+  scale_y_continuous(lim=c(-2.50,1.50), breaks=c(-2.50,-1.50,-0.50,0.550,1.50),
+                     labels = function(x) sprintf("%.2f", x))
+p.beta.cap
+
+```
+
+Moving on, let's make stacked bar plots, starting with a figure with the population broken down by original soil.
+
+```{r Nodule barplot figures, results='hide', message=FALSE, warning=FALSE}
+
+# Sort by soil
+isolates$Soil <- factor(isolates$Soil,
+                        levels = c("GSC145", "GSC146", "GSC147", "GSC148",
+                                   "GSC150", "GSC151", "GSC152", "GSC144",
+                                   "GSC149"))
+isolates$Host <- factor(isolates$Host, 
+                        levels = c("Commercial_navy", "Heritage_navy",
+                                   "Commercial_kidney", "Heritage_kidney"))
+
+# Create a barplot by soil 
+myColours <- carto_pal(12, "Safe")
+soilp <- ggplot(isolates, aes(x=Soil, fill=Species_classification)) + 
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) + 
+  xlab("Soil") +
+  ylab("Abundance") +
+  scale_fill_manual(values=c(myColours[1],myColours[2],myColours[3],myColours[4],
+                             myColours[5],myColours[6],myColours[7],myColours[8],
+                             myColours[9],myColours[10],myColours[11])) +
+  theme_classic() +
+  theme(text = element_text(size = 17),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.text.x = element_text(size = 17, angle = 30, hjust = 1, vjust=1)) 
+soilp
+
+ # Create a barplot by soil 
+myColours <- carto_pal(12, "Safe")
+soilc <- ggplot(isolates, aes(x=Host, fill=Species_classification)) + 
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) + 
+  xlab("Trapping cultivar") +
+  ylab("Abundance") +
+  scale_fill_manual(values=c(myColours[1],myColours[2],myColours[3],myColours[4],
+                             myColours[5],myColours[6],myColours[7],myColours[8],
+                             myColours[9],myColours[10],myColours[11])) +
+  theme_classic() +
+  theme(text = element_text(size = 17),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_text(size = 17, angle = 30, hjust = 1, vjust=1)) 
+soilc
+
+```
+
+```{r Nodule figures - save, results='hide', message=FALSE, warning=FALSE}
+
+# Save the figure
+pdf('Nodule.trapping.pdf', width=9, height=18.25)
+p.beta.cap / soilp + soilc + plot_layout(heights = c(1,1,1))
+dev.off()
+
+```

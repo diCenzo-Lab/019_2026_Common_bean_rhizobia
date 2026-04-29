@@ -1,0 +1,277 @@
+---
+title: "Nitrogen_addition"
+output: html_document
+date: "2026-02-23"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+options(width=200)
+
+```
+
+# Screening a subset of isolates on navy bean
+
+```{r Load libraries, results='hide', message=FALSE, warning=FALSE}
+
+library(lme4)
+library(phyloseq)
+library(car)
+library(emmeans)
+library(ggplot2)
+library(patchwork)
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(tibble)
+library(rcartocolor)
+library(multcomp)
+library(tidyverse)
+
+```
+
+# Experiment set up
+
+Navy bean plants were grown in a greenhouse with and without a rhizobium inoculant (strain QUR00071). Plants were grown with two types of nitrogen supplemented treatments: one time application at the beginning of the experiment, and continuous application of nitrogen (nitrogen applied once a week). Several different nitrogen concentrations were tested in the experiment. 
+
+Plants were grown for 4 weeks. At the end of the experiment, shoot biomass was dried and weighed. 
+
+```{r Load data, results='hide', message=FALSE, warning=FALSE}
+
+# load the data 
+data <- read.table("nitrogen_addition_data.txt",
+                   header = TRUE, row.names = NULL)
+
+# Remove one plant that sprouted a week and half late and other plant without SDW data
+data <- data %>%
+  filter(Sample!=28) %>%
+  filter(Sample!=32)
+
+```
+
+# Statistical analysis
+
+## Test the effect of one-time nitrogen addition
+
+```{r Stats - once, message=FALSE, warning=FALSE}
+
+# Filter the dataset for the one time data 
+data.once<- data %>%
+  filter(Nitrogen_mM=="0" | Treatment=="Once") %>%
+  mutate(Rhizobia=as.factor(Rhizobia))
+
+data.once$Nitrogen_of <- factor(data.once$Nitrogen_mM, levels = c(0,2.5,5,10,20),
+                              ordered = TRUE)
+data.once$Rhizobia <- factor(data.once$Rhizobia, levels = c("Yes", "No"))
+
+# linear model 
+model.once <- lm(log(Biomass_g) ~ Rhizobia * Nitrogen_of, data = data.once)
+layout(matrix(1:4, ncol = 2))
+plot(model.once)
+summary(model.once)
+Anova(model.once, type=3)
+
+# Get contrasts
+model.once.em <- emmeans(model.once, ~ Rhizobia | Nitrogen_of,
+                         infer = TRUE, type = "response")
+model.once.em.df <- as.data.frame(model.once.em)
+model.once.em.rg <- regrid(model.once.em)
+model.once.em.rg.con <- contrast(model.once.em.rg, by = "Nitrogen_of", 
+                                 method = "pairwise", infer = TRUE,
+                                 ratios = FALSE, type = "response")
+model.once.em.rg.con.df <- as.data.frame(model.once.em.rg.con)
+
+# Create a table rounded to 2 decimal place
+kable(model.once.em.rg.con.df, align = "l", digits = 2,
+      caption = "One-time nitrogen summary") %>%
+  kable_classic(full_width = FALSE)
+
+```
+
+There is a significant effect of inoculation and the interaction of inoculation with nitrogen. Now plot the contrasts.
+
+```{r Stats - once - plot contrasts, message=FALSE, warning=FALSE}
+
+# Make plot
+plot.con.once <- ggplot(model.once.em.rg.con.df, aes(x = Nitrogen_of, y = estimate)) +
+  geom_pointrange(aes(ymin = lower.CL, ymax = upper.CL)) +
+  geom_hline(aes(yintercept = 0), linetype = 2) +
+  geom_line(aes(group = contrast)) +
+  scale_x_discrete(name = "Nitrogen concentration (mM)") +
+  scale_y_continuous(name = "SDW change with inoculation (g/plant)",
+                     limits = c(0,3),
+                     breaks = c(0,0.75,1.5,2.25,3)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "right", 
+        strip.background = element_blank(), 
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"))  
+plot.con.once
+
+```
+
+## Test the effect of ongoing nitrogen addition
+
+```{r Stats - ongoing, message=FALSE, warning=FALSE}
+
+# filter the dataset 
+data.ongoing<- data %>%
+  filter(Nitrogen_mM=="0" | Treatment=="Ongoing") %>%
+  mutate(Rhizobia=as.factor(Rhizobia))
+
+data.ongoing$Nitrogen_of <- factor(data.ongoing$Nitrogen_mM, levels = c(0,1,2.5,10,20),
+                              ordered = TRUE)
+data.ongoing$Rhizobia <- factor(data.ongoing$Rhizobia, levels = c("Yes", "No"))
+
+# linear model 
+model.ongoing <- lm(log(Biomass_g) ~ Rhizobia * Nitrogen_of, data = data.ongoing)
+plot(model.ongoing)
+summary(model.ongoing)
+Anova(model.ongoing, type=3)
+
+# Get contrasts
+model.ongoing.em <- emmeans(model.ongoing, ~ Rhizobia | Nitrogen_of,
+                         infer = TRUE, type = "response")
+model.ongoing.em.df <- as.data.frame(model.ongoing.em)
+model.ongoing.em.rg <- regrid(model.ongoing.em)
+model.ongoing.em.rg.con <- contrast(model.ongoing.em.rg, by = "Nitrogen_of", 
+                                 method = "pairwise", infer = TRUE,
+                                 ratios = FALSE, type = "response")
+model.ongoing.em.rg.con.df <- as.data.frame(model.ongoing.em.rg.con)
+
+# Create a table rounded to 2 decimal place
+kable(model.ongoing.em.rg.con.df, align = "l", digits = 2,
+      caption = "Ongoing nitrogen summary") %>%
+  kable_classic(full_width = FALSE)
+
+```
+
+There is a significant effect of inoculation, nitrogen, and the interaction of inoculation with nitrogen. Now plot the contrasts.
+
+```{r Stats - ongoing - plot contrasts, message=FALSE, warning=FALSE}
+
+# Make plot
+plot.con.ongoing <- ggplot(model.ongoing.em.rg.con.df, aes(x = Nitrogen_of, y = estimate)) +
+  geom_pointrange(aes(ymin = lower.CL, ymax = upper.CL)) +
+  geom_hline(aes(yintercept = 0), linetype = 2) +
+  geom_line(aes(group = contrast)) +
+  scale_x_discrete(name = "Nitrogen concentration (mM)") +
+  scale_y_continuous(name = "SDW change with inoculation (g/plant)",
+                     limits = c(-2.5,2.5),
+                     breaks = c(-2.5,-1.25,0,1.25,2.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "right", 
+        strip.background = element_blank(), 
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"))  
+plot.con.ongoing
+
+```
+
+# Data visualization
+
+```{r Create plots - ongoing, message=FALSE, warning=FALSE}
+
+# Get stats for the data
+data.ongoing$Rhizobia <- factor(data.ongoing$Rhizobia, levels = c("No", "Yes"))
+stats.ongoing <- data.ongoing %>%
+  group_by(Nitrogen_mM, Rhizobia) %>%
+  summarize(Mean = mean(Biomass_g),
+            SD = sd(Biomass_g)) %>%
+  mutate(Nitrogen=as.factor(Nitrogen_mM))
+stats.ongoing
+
+# Plot date for ongoing application
+ongoing.plot <- ggplot(stats.ongoing, aes(x=Nitrogen, y=Mean, fill=Rhizobia)) + 
+  scale_fill_manual(values=c("white", "lightgrey")) +
+  geom_bar(stat = "identity",
+           position = position_dodge(),
+           colour = "black") +
+  geom_errorbar(aes(ymin = Mean-SD, ymax = Mean+SD),
+                position = position_dodge(width = 0.9),
+                stat = "identity", width = 0.5, linewidth = 0.5) +
+  geom_vline(xintercept = c(1.5,2.5,3.5,4.5), color="lightgrey", linetype = "longdash") +
+  scale_x_discrete(name = "Nitrogen concentration (mM)") +
+  scale_y_continuous(name = "Shoot dry weight (SDW) (g/plant)",
+                     limits = c(0,6),
+                     breaks = c(0,1.5,3,4.5,6)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        strip.background = element_blank(), 
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"))  
+ongoing.plot
+
+```
+
+```{r Create plots - one time, message=FALSE, warning=FALSE}
+
+# Get stats for the data
+data.once$Rhizobia <- factor(data.once$Rhizobia, levels = c("No", "Yes"))
+stats.once <- data.once %>%
+  group_by(Nitrogen_mM, Rhizobia) %>%
+  summarize(Mean = mean(Biomass_g),
+            SD = sd(Biomass_g)) %>%
+  mutate(Nitrogen=as.factor(Nitrogen_mM))
+stats.once
+
+# Plot date for onetime application
+once.plot <- ggplot(stats.once, aes(x=Nitrogen, y=Mean, fill=Rhizobia)) + 
+  scale_fill_manual(values=c("white", "lightgrey")) +
+  geom_bar(stat = "identity",
+           position = position_dodge(),
+           colour = "black") +
+  geom_errorbar(aes(ymin = Mean-SD, ymax = Mean+SD),
+                position = position_dodge(width = 0.9),
+                stat = "identity", width = 0.5, linewidth = 0.5) +
+  geom_vline(xintercept = c(1.5,2.5,3.5,4.5), color="lightgrey", linetype = "longdash") +
+  scale_x_discrete(name = "Nitrogen concentration (mM)") +
+  scale_y_continuous(name = "Shoot dry weight (SDW) (g/plant)",
+                     limits = c(0,6),
+                     breaks = c(0,1.5,3,4.5,6)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        strip.background = element_blank(), 
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"))  
+once.plot
+
+```
+
+```{r Export plots, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("nitrogen.addition.pdf", width=12, height=8)
+(ongoing.plot + plot.con.ongoing + plot_layout(widths = c(1.5, 1))) / 
+  (once.plot + plot.con.once + plot_layout(widths = c(1.5, 1)))
+dev.off()
+
+```

@@ -1,0 +1,518 @@
+---
+title: "Genome_summary"
+output: html_document
+date: "2026-02-23"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+options(width=200)
+
+```
+
+# Genome summary
+
+This document contains the code for running  the statistical analyses and data visualization for the nodule trapping data.
+
+# Load required libraries
+
+```{r Load libraries, results='hide', message=FALSE, warning=FALSE}
+
+library(lme4)
+library(phyloseq)
+library(car)
+library(emmeans)
+library(ggplot2)
+library(patchwork)
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(tibble)
+library(tidyverse)
+library(UpSetR)
+library(gplots)
+library(gggenes)
+library(RColorBrewer)
+
+```
+
+# Statistical analysis of the genome metrics
+
+Examine if genome size and replicon number differs significantly across specie
+
+```{r Statistical analysis - load data, results='hide', message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("genome_stats.txt",
+                   header = TRUE, row.names = NULL)
+
+```
+
+First check if genome size is statistically different across species
+
+```{r Statistical analysis - genome size, message=FALSE, warning=FALSE}
+
+# Perform statistical analysis on genome size
+model.size <- lm(genome_size ~ Species, data=data)
+summary(model.size)
+#model.size.aov <- Anova(model.size, type = 2)
+#model.size.em <- emmeans(model.size, pairwise ~ Species,
+#                         infer = TRUE, type = "response")
+#model.size.em$emmeans
+#model.size.em$contrasts
+
+```
+
+Genome size is statistically different across species.
+
+Now check if the number of replicons differs, limited to only complete genomes
+
+```{r Statistical analysis - contig number, rmessage=FALSE, warning=FALSE}
+
+# Perform statistical analysis on replicon count
+data.complete <- data[data$genome_status == "complete", ]
+model.replicon <- lm(contig_count ~ Species, data=data.complete)
+summary(model.replicon)
+#model.replicon.aov <- Anova(model.replicon, type = 2)
+#model.replicon.em <- emmeans(model.replicon, pairwise ~ Species,
+#                         infer = TRUE, type = "response")
+#model.replicon.em$emmeans
+#model.replicon.em$contrasts
+
+```
+
+Replicon count is statistically different across species.
+
+Now clear the workspace in preparation for next analyses.
+
+```{r Statistical analysis - clear, results='hide', message=FALSE, warning=FALSE}
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+# Summarize genome metrics
+
+Prepare tables with summary statistics for the genome metrics of interest
+
+```{r Genome metrics - load, results='hide', message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("genome_stats.txt",
+                   header = TRUE, row.names = NULL)
+
+```
+
+Prepare summary statistics for genome size.
+
+```{r Genome metrics - size, message=FALSE, warning=FALSE}
+
+# Get summary metrics for genome size
+genome.size.stats <- data %>%
+  group_by(Species) %>%
+  summarize(Count = n(),
+            Mean = round(mean(genome_size, na.rm = TRUE), 0),
+            Median = round(median(genome_size, na.rm = TRUE), 0),
+            SD = round(sd(genome_size, na.rm = TRUE), 0),
+            Min = round(min(genome_size, na.rm = TRUE), 0),
+            Max = round(max(genome_size, na.rm = TRUE), 0))
+
+# Create a table rounded to 0 decimal place
+kable(genome.size.stats, align = "l",
+      caption = "Genome size statistics") %>%
+  kable_classic(full_width = FALSE)
+
+```
+
+Now prepare summary statistics for contig number, limiting the analysis to complete genomes
+
+```{r Genome metrics - contigs, message=FALSE, warning=FALSE}
+
+# Get summary metrics for contig count
+data.complete <- data[data$genome_status == "complete", ]
+replicon.stats <- data.complete %>%
+  group_by(Species) %>%
+  summarize(Count = n(),
+            Mean = round(mean(contig_count, na.rm = TRUE), 0),
+            Median = round(median(contig_count, na.rm = TRUE), 0),
+            SD = round(sd(contig_count, na.rm = TRUE), 0),
+            Min = round(min(contig_count, na.rm = TRUE), 0),
+            Max = round(max(contig_count, na.rm = TRUE), 0))
+
+# Create a table rounded to 0 decimal place
+kable(replicon.stats, align = "l",
+      caption = "Contig count statistics") %>%
+  kable_classic(full_width = FALSE)
+
+```
+
+Now, prepare a graph summarizing the genome size distribution
+
+```{r Genome metrics - figure create, message=FALSE, warning=FALSE}
+
+# Prepare a box plot with overlapping datapoints
+plot_boxplot <- ggplot(data, aes(x = Species, y = genome_size)) +
+  geom_boxplot() +
+  geom_jitter(colour="grey", size=1, alpha=1, width=0.25) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = "Genome size (Mb)",
+                     limits = c(6000000,8000000),
+                     breaks = c(6000000,6500000,7000000,7500000,8000000),
+                     labels = function(x) x / 1e6) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust=1, face="italic"),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        strip.background = element_blank(), 
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,2), "cm"))  
+plot_boxplot
+
+```
+
+```{r Genome metrics - figure save, results='hide', message=FALSE, warning=FALSE}
+
+# Save as a SVG file
+svg(filename = "genome.size.svg", width=8.5, height=5)
+plot_boxplot
+dev.off()
+
+# Save as a PDF file
+pdf("genome.size.pdf", width=8.5, height=5)
+plot_boxplot
+dev.off()
+
+```
+
+Finally, clear the workspace in preparation for next analyses.
+
+```{r Genome metrics - clear, results='hide', message=FALSE, warning=FALSE}
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+# Average nucleotide identity (ANI)
+
+Make a heatmap clustering the 216 Rhizobium isolates based on pairwise ANI values.
+
+```{r ANI - create, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("ANI_matrix.txt",
+                   header = TRUE, row.names = 1)
+data <- data.matrix(data)
+
+# Set clustering variables
+dist.pear <- function(x) as.dist(1-cor(t(x)))
+hclust.ave <- function(x) hclust(x, method="average")
+
+# Prepare heatmap
+my_palette <- colorRampPalette(c("white", "light blue", "dark blue"))(n=4)
+heatmap.2(data, trace=c("none"), density.info=c("none"), col=my_palette,
+          breaks = c(94.9,95,98.9,99.8, 100),
+          hclustfun = hclust.ave,
+          distfun = dist.pear,
+          lmat=matrix(c(4,2,3,1), nrow=2, ncol=2), key=T,
+          cexRow=0.1, cexCol=0.1)
+
+```
+
+Now save the figure.
+
+```{r ANI - export, results='hide', message=FALSE, warning=FALSE}
+
+# Export as a SVG file
+svg(filename = 'ANI_matrix.svg')
+heatmap.2(data, trace=c("none"), density.info=c("none"), col=my_palette,
+          breaks = c(94.9,95,98.9,99.8, 100),
+          hclustfun = hclust.ave,
+          distfun = dist.pear,
+          lmat=matrix(c(4,2,3,1), nrow=2, ncol=2), key=T,
+          cexRow=0.1, cexCol=0.1)
+dev.off()
+
+# Explort as a PDF file
+pdf('ANI_matrix.pdf')
+heatmap.2(data, trace=c("none"), density.info=c("none"), col=my_palette,
+          breaks = c(94.9,95,98.9,99.8, 100),
+          hclustfun = hclust.ave,
+          distfun = dist.pear,
+          lmat=matrix(c(4,2,3,1), nrow=2, ncol=2), key=T,
+          cexRow=0.1, cexCol=0.1)
+dev.off()
+
+```
+
+Now clear the workspace in preparation for next analyses.
+
+```{r ANI - clear, results='hide', message=FALSE, warning=FALSE}
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+# Pangenome visualization
+
+Create UpSetR plots to visualize the results of the pangenome analysis. First, create species level data where a gene is considered present in a species as long as it shows up at least one, and then create the plot.
+
+```{r Pangenome total - create, message=FALSE, warning=FALSE}
+
+# Load the data 
+gene_bean <- read.table("gene_presence_absence.tsv",
+                        header = TRUE)
+
+# Clean up the species names in the columns 
+gene_bean2 <- gene_bean %>%
+  pivot_longer(
+    cols = -Gene,             
+    names_to = "full_name",
+    values_to = "PA",
+    values_transform = list(PA = as.numeric)  
+  ) %>%
+  mutate(Species = str_extract(full_name, "^[^_]+_[^_]+")) %>%
+  group_by(Gene, Species) %>%
+  summarise(PA = max(PA), .groups = "drop") %>%
+  pivot_wider(names_from = Species, values_from = PA)
+
+# Prep data for the upsetr plot 
+gene_bean3 <- gene_bean2 %>%
+  dplyr::select(-Gene)
+  
+gene_bean3 <- as.data.frame(gene_bean3)
+rownames(gene_bean3) <- NULL
+
+# Prep the names for plot 
+colnames(gene_bean3) <- gsub("_", " ", colnames(gene_bean3))
+
+plot1<-upset(
+  gene_bean3,
+  point.size = 3.5, 
+  order.by = "freq",
+  sets = colnames(gene_bean3),   
+  mainbar.y.label = "Shared gene groups",
+  sets.x.label = "Total genes",
+  mb.ratio = c(0.6,0.4),
+  text.scale = c(1.6, # intersection title
+                           1.6, # size tick labels
+                           1.6, # set size title
+                           1.6, # set tick sizes 
+                           1.6, # species labels
+                           0.8),
+)
+plot1
+
+```
+
+```{r Pangenome total - export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("UpSetR.total.pdf", width=10, height=6)
+plot1
+dev.off()
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+Now, create species level data where a gene is considered present in a species only if it is present in at least 95% of the isolates. Then, create a plot limited to genes that are present in the core or soft core genome of at least one species but absent in all other species.
+
+```{r Pangenome core - create, message=FALSE, warning=FALSE}
+
+# Load the data 
+gene_bean <- read.table("gene_presence_absence.tsv",
+                        header = TRUE)
+
+# Clean up the species names in the columns convert anything in the soft core genome to being in the core genome
+gene_bean2 <- gene_bean %>%
+  pivot_longer(
+    cols = -Gene,             
+    names_to = "full_name",
+    values_to = "PA",
+    values_transform = list(PA = as.numeric)  
+  ) %>%
+  mutate(Species = str_extract(full_name, "^[^_]+_[^_]+")) %>%
+  group_by(Gene, Species) %>%
+  summarise(PA = sum(PA) / n(), .groups = "drop") %>%
+  #mutate(PA = replace(PA, PA <= 0.05, 0)) %>%
+  mutate(PA = replace(PA, PA >= 0.95, 1)) %>%
+  filter(PA == 0 | PA == 1) %>%
+  pivot_wider(names_from = Species, values_from = PA) %>%
+  drop_na()
+
+# Prep data for the upsetr plot 
+gene_bean3 <- gene_bean2 %>%
+  dplyr::select(-Gene)
+  
+gene_bean3 <- as.data.frame(gene_bean3)
+rownames(gene_bean3) <- NULL
+
+# Prep the names for plot 
+colnames(gene_bean3) <- gsub("_", " ", colnames(gene_bean3))
+
+plot1<-upset(
+  gene_bean3,
+  point.size = 3.5, 
+  order.by = "freq",
+  sets = colnames(gene_bean3),   
+  mainbar.y.label = "Shared gene groups",
+  sets.x.label = "Total genes",
+  mb.ratio = c(0.6,0.4),
+  text.scale = c(1.6, # intersection title
+                           1.6, # size tick labels
+                           1.6, # set size title
+                           1.6, # set tick sizes 
+                           1.6, # species labels
+                           0.8),
+)
+plot1
+
+```
+
+```{r Pangenome core - export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("UpSetR.core.pdf", width=10, height=6)
+plot1
+dev.off()
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+# Nod locus
+
+Create an image showing the organization of nod genes in the representative isolates that have complete genomes. Also includ Rhizobium coratiense QUR0161 to have a second representative of the sv. phaseoli gamma-b allele.
+
+```{r Nod locus - complete, message=FALSE, warning=FALSE}
+
+# Load the data
+genes <- read.table("nod_locus.txt",
+                    header = TRUE, row.names = NULL, sep="\t")
+gaps <- read.table("nod_breaks.txt",
+                   header = TRUE, row.names = NULL, sep="\t")
+
+# Order the isolates
+genes$molecule <- factor(genes$molecule, levels = c("Rhizobium_mongolense_QUR0164","Rhizobium_leguminosarum_QUR0062","Rhizobium_croatiense_QUR0161","Rhizobium_sp_QUR0225","Rhizobium_sp_QUR0188","Rhizobium_sp_QUR0108","Rhizobium_sp_QUR0071","Rhizobium_leguminosarum_QUR0136","Rhizobium_leguminosarum_QUR0050","Rhizobium_croatiense_QUR0171","Rhizobium_croatiense_QUR0087","Rhizobium_leguminosarum_QUR0210","Rhizobium_leguminosarum_QUR0186","Rhizobium_leguminosarum_QUR0177","Rhizobium_laguerreae_QUR0112","Rhizobium_johnstonii_QUR0098","Rhizobium_hidalgonense_QUR0172","Rhizobium_croatiense_QUR0168","Rhizobium_croatiense_QUR0156","Rhizobium_croatiense_QUR0154","Rhizobium_anhuiense_QUR0074","Rhizobium_sophoriradicis_QUR0003","Rhizobium_croatiense_QUR0011"))
+gaps$molecule <- factor(gaps$molecule, levels = c("Rhizobium_mongolense_QUR0164","Rhizobium_leguminosarum_QUR0062","Rhizobium_croatiense_QUR0161","Rhizobium_sp_QUR0225","Rhizobium_sp_QUR0188","Rhizobium_sp_QUR0108","Rhizobium_sp_QUR0071","Rhizobium_leguminosarum_QUR0136","Rhizobium_leguminosarum_QUR0050","Rhizobium_croatiense_QUR0171","Rhizobium_croatiense_QUR0087","Rhizobium_leguminosarum_QUR0210","Rhizobium_leguminosarum_QUR0186","Rhizobium_leguminosarum_QUR0177","Rhizobium_laguerreae_QUR0112","Rhizobium_johnstonii_QUR0098","Rhizobium_hidalgonense_QUR0172","Rhizobium_croatiense_QUR0168","Rhizobium_croatiense_QUR0156","Rhizobium_croatiense_QUR0154","Rhizobium_anhuiense_QUR0074","Rhizobium_sophoriradicis_QUR0003","Rhizobium_croatiense_QUR0011"))
+
+# Order the gene colours
+genes$gene <- factor(genes$gene, levels = c("nolL", "nodD", "nodA", "nodZ", "nodB", "nodC", "nodS", "nodU", "nodI", "nodJ", "nolE", "noeL", "nolO", "hsnT", "nodF", "nodE", "nodM", "nodH", "nodP", "nodQ"))
+
+# Make the plot 
+myColors <- colorRampPalette(brewer.pal(12, "Paired"))(20)
+plot1 <- ggplot(genes, aes(xmin = start, xmax = end, 
+                  y = molecule, fill = gene, label = gene,
+                  forward = orientation)) +
+  geom_gene_arrow(arrowhead_height = unit(5, "mm"), arrowhead_width = unit(1, "mm"),
+                  arrow_body_height = unit(5, "mm")) +
+  geom_gene_label() +
+  geom_feature(
+    data = gaps,
+    aes(x = position, y = molecule)
+  ) +
+  geom_feature_label(
+    data = gaps,
+    aes(x = position, y = molecule, label = name)
+  ) +
+  #facet_wrap(~ molecule, scales = "free", ncol = 1) +
+  scale_fill_manual(values = myColors) +
+  theme_genes() +
+  scale_x_continuous(limits = c(0,26000), breaks = c(0,6500,13000,19500,26000))
+plot1
+
+```
+
+```{r Nod locus - complete export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("nod.locus.full.pdf", width=10, height=10)
+plot1
+dev.off()
+
+```
+
+Since many of them look identical, there is no need to have all of them in the main figure. Therefore, create a reduced version with just one representative per type.
+
+```{r Nod locus - subset, message=FALSE, warning=FALSE}
+
+# Filter to a smaller subset so that the image is more manageable
+isolates.subset <- c("Rhizobium_mongolense_QUR0164","Rhizobium_croatiense_QUR0161","Rhizobium_croatiense_QUR0087","Rhizobium_croatiense_QUR0168","Rhizobium_croatiense_QUR0011")
+filtered.genes <- genes %>% 
+  filter(molecule %in% isolates.subset)
+filtered.gaps <- gaps %>% 
+  filter(molecule %in% isolates.subset)
+
+# Make the plot 
+myColors <- colorRampPalette(brewer.pal(12, "Paired"))(20)
+plot2 <- ggplot(filtered.genes, aes(xmin = start, xmax = end, 
+                  y = molecule, fill = gene, label = gene,
+                  forward = orientation)) +
+  geom_gene_arrow(arrowhead_height = unit(10, "mm"), arrowhead_width = unit(2, "mm"),
+                  arrow_body_height = unit(10, "mm")) +
+  geom_gene_label() +
+  geom_feature(
+    data = filtered.gaps,
+    aes(x = position, y = molecule)
+  ) +
+  geom_feature_label(
+    data = filtered.gaps,
+    aes(x = position, y = molecule, label = name)
+  ) +
+  #facet_wrap(~ molecule, scales = "free", ncol = 1) +
+  scale_fill_manual(values = myColors) +
+  theme_genes() +
+  scale_x_continuous(limits = c(0,26000), breaks = c(0,6500,13000,19500,26000))
+plot2
+
+```
+
+```{r Nod locus - subset export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("nod.locus.subset.pdf", width=15, height=4)
+plot2
+dev.off()
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+# Symbiovar distribution
+
+Lastly, summarize the distribution of symbiovar (subclades) across species
+
+```{r Symbiovar distribution, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("genome_stats.txt",
+                    header = TRUE, row.names = NULL, sep="\t")
+
+# Make the table
+symbiovar.stats <- data %>%
+  group_by(Species, Symbiovar) %>%
+  summarize(Count = n())
+symbiovar.stats.wide <- symbiovar.stats %>%
+  pivot_wider(names_from = Symbiovar, values_from = Count) %>%
+  replace(is.na(.), 0)
+
+# Create a table rounded to 0 decimal place
+kable(symbiovar.stats.wide, align = "l",
+      caption = "Symbiovar distribution") %>%
+  kable_classic(full_width = FALSE)
+
+```

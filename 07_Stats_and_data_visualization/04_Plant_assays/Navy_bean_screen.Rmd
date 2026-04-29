@@ -1,0 +1,422 @@
+---
+title: "Navy_bean_screen"
+output: html_document
+date: "2026-02-23"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+options(width=200)
+
+```
+
+# Screening all isolates on navy bean
+
+```{r Load libraries, results='hide', message=FALSE, warning=FALSE}
+
+library(lme4)
+library(phyloseq)
+library(car)
+library(emmeans)
+library(ggplot2)
+library(patchwork)
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(tibble)
+library(rcartocolor)
+library(multcomp)
+library(tidyverse)
+
+```
+
+# Experiment set up
+
+A total of 216 rhizobium strains were inoculated onto navy bean plants in a greenhouse experiment. One replicate per strain was planted. Aboveground biomass was dried and measured at the end of the experiment. NDVI measurements were also taken on the top leaf of the plants throughout the experiment. 
+
+# Statistical analysis and data visualization of SDW data
+
+## Run the stats on shoot dry weight based on species.
+
+```{r SDW species, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("navy_screen_data.txt",
+                   header = TRUE, row.names = NULL)
+
+# Subset to get just the data for the inoculated plants
+data.isolates <- data %>%
+  dplyr::filter(Species_classification != "Nitrogen_plus") %>%
+  dplyr::filter(Species_classification != "Nitrogen_negative") %>%
+  droplevels(.)
+
+# Run the model for species with an offset to accound for different group sizes
+model.sdw <- lm(Plant_Shoot_Dry_Weight ~ Species_classification,
+                data=data.isolates,
+                weights = 1 / table(data.isolates$Species_classification)[data.isolates$Species_classification])
+summary(model.sdw)
+layout(matrix(1:4, ncol = 2))
+plot(model.sdw)
+model.sdw.aov <- Anova(model.sdw, type = 2)
+model.sdw.aov
+model.sdw.em.sp <- emmeans(model.sdw, pairwise ~ Species_classification,
+                           infer = TRUE, type = "response")
+model.sdw.em.sp_df <- as.data.frame(model.sdw.em.sp$emmeans)
+model.sdw.con.sp_df <- as.data.frame(model.sdw.em.sp$contrasts)
+cld(model.sdw.em.sp)
+
+```
+
+There are significant effects. Now plot the contrasts
+
+```{r SDW species - plot contrasts, message=FALSE, warning=FALSE}
+
+## visualize contrasts
+cont <- model.sdw.con.sp_df %>%
+  separate(contrast,
+           into = c("species_A", "species_B"),
+           sep = " - ")
+
+cont2 <- cont
+
+cont2$species_A <- cont$species_B
+cont2$species_B <- cont$species_A
+
+cont2$estimate <- -1 * cont$estimate
+cont2$lower.CL <- -1 * cont$lower.CL
+cont2$upper.CL <- -1 * cont$upper.CL
+
+cont.full <- rbind(cont, cont2)
+
+## get rid of _
+cont.full <- cont.full %>%
+  mutate(
+      species_A = str_replace_all(species_A, "_", " "),
+      species_B = str_replace_all(species_B, "_", " "),
+      species_A = str_replace_all(species_A, "spA", "sp. A"),
+      species_B = str_replace_all(species_B, "spA", "sp. A"),
+      species_A = str_replace_all(species_A, "spB", "sp. B"),
+      species_B = str_replace_all(species_B, "spB", "sp. B"),
+      species_B = str_replace_all(species_B, "Rhizobium", "R.")
+  )
+
+plot.contrasts <- ggplot(cont.full, aes(x = species_B, y = estimate)) +
+  geom_pointrange(aes(ymin = lower.CL, ymax = upper.CL)) +
+  geom_pointrange(data = cont.full %>%
+                    filter(p.value < 0.05),
+                  aes(ymin = lower.CL, ymax = upper.CL), colour = "red") +
+  geom_hline(yintercept = 0, linetype = 2) +
+  facet_wrap(~species_A, ncol = 4, scales = "fixed") +
+  ylab(NULL) +
+  xlab(NULL) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust=1, face="italic"),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        #strip.background = element_blank(), 
+        strip.text = element_text(size = 12, face="italic"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,3), "cm"))  
+plot.contrasts
+
+```
+
+```{r SDW species - contrasts export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("sdw.species.contrasts.pdf", width=15, height=10)
+plot.contrasts
+dev.off()
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+## Run the stats on shoot dry weight based on symbiovar
+
+```{r SDW symbiovar, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("navy_screen_data.txt",
+                   header = TRUE, row.names = NULL)
+
+# Subset to get just the data for the inoculated plants and remove symbiovar gallicum
+data.isolates <- data %>%
+  dplyr::filter(Species_classification != "Nitrogen_plus") %>%
+  dplyr::filter(Species_classification != "Nitrogen_negative") %>%
+  dplyr::filter(Symbiovar != "gallicum") %>%
+  droplevels(.)
+
+# Run the model for species with an offset to accound for different group sizes
+model.sdw <- lm(Plant_Shoot_Dry_Weight ~ Symbiovar,
+                data=data.isolates,
+                weights = 1 / table(data.isolates$Symbiovar)[data.isolates$Symbiovar])
+summary(model.sdw)
+layout(matrix(1:4, ncol = 2))
+plot(model.sdw)
+model.sdw.aov <- Anova(model.sdw, type = 2)
+model.sdw.aov
+model.sdw.em.sp <- emmeans(model.sdw, pairwise ~ Symbiovar,
+                           infer = TRUE, type = "response")
+model.sdw.em.sp_df <- as.data.frame(model.sdw.em.sp$emmeans)
+model.sdw.con.sp_df <- as.data.frame(model.sdw.em.sp$contrasts)
+cld(model.sdw.em.sp)
+
+```
+
+There are significant effects. Now plot the contrasts
+
+```{r SDW symbiovar - plot contrasts, message=FALSE, warning=FALSE}
+
+## visualize contrasts
+cont <- model.sdw.con.sp_df %>%
+  separate(contrast,
+           into = c("species_A", "species_B"),
+           sep = " - ")
+
+cont2 <- cont
+
+cont2$species_A <- cont$species_B
+cont2$species_B <- cont$species_A
+
+cont2$estimate <- -1 * cont$estimate
+cont2$lower.CL <- -1 * cont$lower.CL
+cont2$upper.CL <- -1 * cont$upper.CL
+
+cont.full <- rbind(cont, cont2)
+
+## get rid of _
+cont.full <- cont.full %>%
+  mutate(
+      species_A = str_replace_all(species_A, "[(]", ""),
+      species_B = str_replace_all(species_B, "[(]", ""),
+      species_A = str_replace_all(species_A, "[)]", ""),
+      species_B = str_replace_all(species_B, "[)]", "")
+  )
+
+plot.contrasts <- ggplot(cont.full, aes(x = species_B, y = estimate)) +
+  geom_pointrange(aes(ymin = lower.CL, ymax = upper.CL)) +
+  geom_pointrange(data = cont.full %>%
+                    filter(p.value < 0.05),
+                  aes(ymin = lower.CL, ymax = upper.CL), colour = "red") +
+  geom_hline(yintercept = 0, linetype = 2) +
+  facet_wrap(~species_A, ncol = 4, scales = "fixed") +
+  ylab(NULL) +
+  xlab(NULL) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust=1, face="italic"),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        #strip.background = element_blank(), 
+        strip.text = element_text(size = 12, face="italic"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,3), "cm"))  
+plot.contrasts
+
+```
+
+```{r SDW symbiovar - plot export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("sdw.symbiovar.contrasts.pdf", width=11.75, height=3.95)
+plot.contrasts
+dev.off()
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+## Make box plots for the SDW data based on species and symbiovar
+
+```{r SDW boxplot, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("navy_screen_data.txt",
+                   header = TRUE, row.names = NULL)
+data <- data %>%
+  mutate(
+      Species_classification = str_replace_all(Species_classification, "_", " ")
+  )
+
+# Make the boxplot grouped by species
+myColours <- carto_pal(12, "Safe")
+data$facet1 <- "Species"
+box.sp <- ggplot(data, aes(x = Species_classification, y = Plant_Shoot_Dry_Weight)) +
+  geom_boxplot(fill = c("lightgrey", "lightgrey", myColours[1],myColours[2],myColours[3],myColours[4],
+                             myColours[5],myColours[6],myColours[7],myColours[8],
+                             myColours[9],myColours[10],myColours[11])) +
+  geom_jitter(size=0.75, alpha=1, width=0.25,
+              shape = 21, colour="black", fill="white", stroke = 0.3) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = "Plant shoot dry weight (g/plant)",
+                     limits = c(0,6),
+                     breaks = c(0,1.5,3,4.5,6)) +
+  facet_wrap(~facet1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust=1, face="italic"),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        #strip.background = element_blank(), 
+        strip.text = element_text(size = 12, face="bold"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,2), "cm"))  
+box.sp
+
+# Make the box plot based on symbiovar
+data$Symbiovar <- factor(data$Symbiovar, levels = c("Nitrogen_negative", "Nitrogen_plus",
+                                                    "gallicum", "phaseoli_a",
+                                                    "phaseoli_y-a", "phaseoli_y-b"))
+data$facet2 <- "Symbiovar"
+box.sym <- ggplot(data, aes(x = Symbiovar, y = Plant_Shoot_Dry_Weight)) +
+  geom_boxplot(fill = c("lightgrey", "lightgrey", "#FCE5CD", "#CFE2F3", "#EAD1DC","#D9D2E9")) +
+  geom_jitter(size=0.75, alpha=1, width=0.25,
+              shape = 21, colour="black", fill="white", stroke = 0.3) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = "Plant shoot dry weight (g/plant)",
+                     limits = c(0,6),
+                     breaks = c(0,1.5,3,4.5,6)) +
+  facet_wrap(~facet2) + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust=1, face="italic"),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        #strip.background = element_blank(), 
+        strip.text = element_text(size = 12, face="bold"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,2), "cm"))  
+box.sym
+
+```
+
+```{r SDW boxplot - export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("initial.swd.screen.pdf", width=10, height=5)
+box.sp + box.sym + plot_layout(widths = c(2.1, 1))
+dev.off()
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+# Statistical analysis and data visualization of SDW versus NDVI data
+
+Check if NDVI at week 3 is associated with SDW at week 5
+
+```{r SDW NDVI correlation, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("navy_screen_data.txt",
+                   header = TRUE, row.names = NULL)
+
+# Subset to get just the data for the inoculated plants
+data.isolates <- data %>%
+  dplyr::filter(Species_classification != "Nitrogen_plus") %>%
+  dplyr::filter(Species_classification != "Nitrogen_negative") %>%
+  droplevels(.)
+
+# Remove the one outlier, which also removes the two that have no week 3 data
+data.isolates <- data.isolates %>%
+  dplyr::filter(NDVI_Wk3_Dec6 != 0.2344)
+
+# Run the model
+model <- lm(Plant_Shoot_Dry_Weight ~ NDVI_Wk3_Dec6, data=data.isolates)
+summary(model)
+layout(matrix(1:4, ncol = 2))
+plot(model)
+model.aov <- Anova(model, type = 2)
+model.aov
+
+```
+
+There is a relationship between NDVI at week 3 and SDW at week 5. So now make some plots to show this.
+
+```{r SDW-NDVI plots, message=FALSE, warning=FALSE}
+
+# Make the scatterplot
+scatter.sdw.ndvi <- ggplot(data.isolates, aes(x = NDVI_Wk3_Dec6, y = Plant_Shoot_Dry_Weight)) +
+  geom_point(size=1.5, alpha=1,
+              shape = 21, colour="black", fill="white", stroke = 0.75) +
+  geom_smooth(method = "lm", colour = "black") + 
+  scale_x_continuous(name = "Week 3 NDVI",
+                     limits = c(0.3,0.75),
+                     breaks = c(0.3,0.45,0.6,0.75)) +
+  scale_y_continuous(name = "Plant shoot dry weight (g/plant)",
+                     limits = c(-0.3,3.3),
+                     breaks = c(0,1.1,2.2,3.3)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        strip.background = element_blank(), 
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())  
+scatter.sdw.ndvi
+
+# Extract the top and bottom quartiles
+q1 <- quantile(data.isolates$NDVI_Wk3_Dec6, 0.25, na.rm = TRUE)
+q3 <- quantile(data.isolates$NDVI_Wk3_Dec6, 0.75, na.rm = TRUE)
+data.isolates$quartile_group <- cut(data.isolates$NDVI_Wk3_Dec6,
+                                    breaks = c(-Inf, q1, q3, Inf),
+                                    labels = c("Bottom Quartile", "Middle 50%", "Top Quartile"),
+                                    include.lowest = TRUE)
+comparison_data <- subset(data.isolates, quartile_group %in% c("Bottom Quartile", "Top Quartile"))
+lm(Plant_Shoot_Dry_Weight ~ quartile_group, data=comparison_data)
+model.quar <- lm(Plant_Shoot_Dry_Weight ~ NDVI_Wk3_Dec6, data=data.isolates)
+
+# Make the boxplot grouped by quartile
+box.ndvi <- ggplot(comparison_data, aes(x = quartile_group, y = Plant_Shoot_Dry_Weight)) +
+  geom_boxplot() +
+  geom_jitter(size=1.5, alpha=1, width=0.25,
+              shape = 21, colour="black", fill="white", stroke = 0.75) +
+  scale_x_discrete(name = "Week 3 NDVI quartile") +
+  scale_y_continuous(name = "Plant shoot dry weight (g/plant)",
+                     limits = c(-0.3,3.3),
+                     breaks = c(0,1.1,2.2,3.3)) +
+ # facet_wrap(~facet1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        #strip.background = element_blank(), 
+        strip.text = element_text(size = 12, face="bold"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,2), "cm"))  
+box.ndvi
+
+```
+
+```{r SDW-NDVI plots - export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("sdw.ndvi.scatter.pdf", width=10, height=5)
+scatter.sdw.ndvi + box.ndvi + plot_layout(widths = c(2, 1))
+dev.off()
+
+```
+

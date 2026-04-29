@@ -1,0 +1,64 @@
+---
+title: "Soil_sample_map"
+output: html_document
+date: "2026-02-23"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+options(width=200)
+
+```
+
+# Visualization of soil sampling sites
+
+This document contains the code for making the map of the sampling sites. However, the input file with the GPS coordinates are not provided in this directory for privacy reasons.
+
+# Load required libraries
+
+```{r Load libraries, results='hide', message=FALSE, warning=FALSE}
+
+library(ggplot2)
+library(canadianmaps)
+library(sf)
+library(dplyr)
+
+```
+
+# Create map of Ontario showing sampling locations
+
+```{r Create map, results='hide', message=FALSE, warning=FALSE}
+
+# Load the data
+soil_locations <- read.table("soil_locations.txt",
+                       header = TRUE, row.names = NULL)
+
+# Get the map
+ontario_map <- PROV %>%
+  filter(PRENAME == "Ontario")
+
+# Make the figure
+map_image <- ggplot() +
+  geom_sf(data = ontario_map,
+          fill = "white", color = "black") +
+  geom_point(data = soil_locations, aes(x = Longitude, y = Latitude),
+             color = "red", size = 2) +
+  geom_text(data = soil_locations, aes(label = Soil, x = Longitude, y = Latitude),
+            nudge_x = -1.1, check_overlap = TRUE, size = 3) +
+  scale_x_continuous(lim=c(-97,-73),breaks=c(-97,-91,-85,-79,-73)) +
+  scale_y_continuous(lim=c(41,57), breaks=c(41,45,49,53,57)) +
+  theme_bw() +
+  theme(text = element_text(size = 16))
+map_image
+
+# Save the figure
+pdf('Ontario.map.pdf')
+map_image
+dev.off()
+
+
+```
+
+
+

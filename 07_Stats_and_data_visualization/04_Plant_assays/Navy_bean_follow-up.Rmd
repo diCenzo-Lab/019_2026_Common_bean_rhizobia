@@ -1,0 +1,232 @@
+---
+title: "Navy_bean_follow-up"
+output: html_document
+date: "2026-02-23"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+options(width=200)
+
+```
+
+# Screening a subset of isolates on navy bean
+
+```{r Load libraries, results='hide', message=FALSE, warning=FALSE}
+
+library(lme4)
+library(phyloseq)
+library(car)
+library(emmeans)
+library(ggplot2)
+library(patchwork)
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(tibble)
+library(rcartocolor)
+library(multcomp)
+library(tidyverse)
+
+```
+
+# Statistical analysis
+
+Run the stats on shoot dry weight by strain.
+
+```{r Stats - SDW - strain, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("navy_follow-up_data.txt",
+                   header = TRUE, row.names = NULL)
+
+# Subset to get just the data for the inoculated plants
+data.isolates <- data %>%
+  filter(Species != "Uninoculated") %>%
+  droplevels(.)
+
+# Run the model
+model.strain <- lmer(Biomass ~ Strain + (1 | Block), data=data.isolates)
+summary(model.strain)
+
+# Residuals
+plot(model.strain)
+
+# Check significance and perform contrasts
+model.strain.aov <- Anova(model.strain, type = 2)
+model.strain.aov
+#model.strain.bt <- update(ref_grid(model.strain), tran = "log")
+model.strain.em <- emmeans(model.strain, pairwise ~ Strain,
+                            infer = TRUE, type = "response")
+model.strain.em.df <- as.data.frame(model.strain.em$emmeans)
+model.strain.con.df <- as.data.frame(model.strain.em$contrasts)
+cld(model.strain.em)
+
+# Check significance of the random effect
+model.strain.block <- lm(Biomass ~ Strain, data=data.isolates)
+anova(model.strain, model.strain.block)
+
+```
+
+There are significant effects. Now plot the contrasts
+
+```{r Stats - SDW - strain - plot contrasts, message=FALSE, warning=FALSE}
+
+## visualize contrasts
+cont <- model.strain.con.df %>%
+  separate(contrast,
+           into = c("species_A", "species_B"),
+           sep = " - ")
+
+cont2 <- cont
+
+cont2$species_A <- cont$species_B
+cont2$species_B <- cont$species_A
+
+cont2$estimate <- -1 * cont$estimate
+cont2$lower.CL <- -1 * cont$lower.CL
+cont2$upper.CL <- -1 * cont$upper.CL
+
+cont.full <- rbind(cont, cont2)
+
+## get rid of _
+cont.full <- cont.full %>%
+  mutate(
+      species_A = str_replace_all(species_A, "_", " "),
+      species_B = str_replace_all(species_B, "_", " "),
+      species_A = str_replace_all(species_A, "spA", "sp."),
+      species_B = str_replace_all(species_B, "spA", "sp."),
+      species_B = str_replace_all(species_B, "Rhizobium", "R.")
+  )
+
+# Order as desired
+cont.full$species_A <- factor(cont.full$species_A, levels = c(
+                                              "Rhizobium laguerreae QUR0159", "Rhizobium laguerreae QUR0226",
+                                              "Rhizobium mongolense QUR0056", "Rhizobium mongolense QUR0080",
+                                              "Rhizobium croatiense QUR0087", "Rhizobium croatiense QUR0090",
+                                              "Rhizobium croatiense QUR0134", "Rhizobium croatiense QUR0258",
+                                              "Rhizobium sp. QUR0029", "Rhizobium sp. QUR0070",
+                                              "Rhizobium sp. QUR0071", "Rhizobium sp. QUR0208"))
+cont.full$species_B <- factor(cont.full$species_B, levels = c(
+                                              "R. laguerreae QUR0159", "R. laguerreae QUR0226",
+                                              "R. mongolense QUR0056", "R. mongolense QUR0080",
+                                              "R. croatiense QUR0087", "R. croatiense QUR0090",
+                                              "R. croatiense QUR0134", "R. croatiense QUR0258",
+                                              "R. sp. QUR0029", "R. sp. QUR0070",
+                                              "R. sp. QUR0071", "R. sp. QUR0208"))
+
+# Plot the graph
+plot.contrasts <- ggplot(cont.full, aes(x = species_B, y = estimate)) +
+  geom_pointrange(aes(ymin = lower.CL, ymax = upper.CL)) +
+  geom_pointrange(data = cont.full %>%
+                    filter(p.value < 0.05),
+                  aes(ymin = lower.CL, ymax = upper.CL), colour = "red") +
+  geom_hline(yintercept = 0, linetype = 2) +
+  facet_wrap(~species_A, ncol = 3, scales = "fixed") +
+  ylab(NULL) +
+  xlab(NULL) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust=1, face="italic"),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        #strip.background = element_blank(), 
+        strip.text = element_text(size = 12, face="italic"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,3), "cm"))  
+plot.contrasts
+
+```
+
+```{r Stats - SDW - strain - contrasts export, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("sdw.follow-up.contrasts.pdf", width=11.62, height=13.25)
+plot.contrasts
+dev.off()
+
+# Clean the workspace
+rm(list = ls())
+
+```
+
+# Data visualization
+
+Plot the SDW data based on strain and species
+
+```{r Create plots, message=FALSE, warning=FALSE}
+
+# Load the data
+data <- read.table("navy_follow-up_data.txt",
+                   header = TRUE, row.names = NULL)
+
+# Updating naming and order
+data <- data %>%
+  mutate(
+      Strain = str_replace_all(Strain, "_", " "),
+      Species = str_replace_all(Species, "_", " "),
+      Strain = str_replace_all(Strain, "spA", "sp."),
+      Species = str_replace_all(Species, "spA", "sp."),
+  )
+data$Strain <- factor(data$Strain, levels = c("Uninoculated",
+                                              "Rhizobium laguerreae QUR0159", "Rhizobium laguerreae QUR0226",
+                                              "Rhizobium mongolense QUR0056", "Rhizobium mongolense QUR0080",
+                                              "Rhizobium croatiense QUR0087", "Rhizobium croatiense QUR0090",
+                                              "Rhizobium croatiense QUR0134", "Rhizobium croatiense QUR0258",
+                                              "Rhizobium sp. QUR0029", "Rhizobium sp. QUR0070",
+                                              "Rhizobium sp. QUR0071", "Rhizobium sp. QUR0208"))
+
+# Get strain-level summary data
+data.table <- data %>%
+  group_by(Strain) %>%
+  summarize(Mean = mean(Biomass),
+            SD = sd(Biomass))
+
+# Plot the strain level data
+myColours <- carto_pal(12, "Safe")
+p.strains <- ggplot() +
+  geom_bar(data = data.table,
+           aes(x = Strain, y = Mean),
+           stat = "identity",
+           colour = "black",
+           fill = c("lightgrey", myColours[6], myColours[6], myColours[8], myColours[8],myColours[3], myColours[3], myColours[3], myColours[3], myColours[10], myColours[10], myColours[10], myColours[10])) +
+  geom_errorbar(data = data.table,
+                aes(x = Strain, ymin = Mean-SD, ymax = Mean+SD),
+                stat = "identity", width = 0.5, size = 0.5) +
+  geom_jitter(data = data,
+              aes(x = Strain, y = Biomass),
+              width = 0.15, size = 1.5, 
+              shape = 21, colour="black", fill="white", stroke = 0.6) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = "Plant shoot dry weight (g/plant)",
+                     limits = c(0,4.5),
+                     breaks = c(0,1.5,3,4.5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust=1, face="italic"),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12), 
+        legend.position = "none", 
+        strip.background = element_blank(), 
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.5,0.5,0.5,3), "cm"))  
+p.strains
+
+```
+
+```{r Export plots, results='hide', message=FALSE, warning=FALSE}
+
+# Save the plot 
+pdf("follow-up.sdw.pdf", width=8, height=6)
+p.strains 
+dev.off()
+
+```
