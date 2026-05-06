@@ -1,5 +1,7 @@
 # Isolation of rhizobia from Ontario soils that are effective at fixing nitrogen with common bean (Phaseolus vulgaris)
 
+Harrison TL, Pandher US, Dixon A, Esme O, Gagnon EMH, Naranjo-Robayo N, Doyle RT, Oresnik IJ, diCenzo GC. 2026 **Isolation of rhizobia from Ontario soils that are effective at fixing nitrogen with common bean (*Phaseolus vulgaris*)**. bioRxiv. doi: 10.64898/2026.05.01.722220.
+
 This repository contains the scripts and input files required to repeat the analyses reported in the associated article.
 
 ## 01_Genome_assembly_and_annotation
