@@ -31,3 +31,7 @@ This folder contains a script to calculate a pangenome from all *Rhizobium* isol
 ## 07_Stats_and_data_visualization
 
 This folder contains the code and input files to perform all statistical analyses reported in this study, as well as figure creation. Files are organized into folders by experiment.
+
+## 08_Annotated_genome_assemblies
+
+At the time of writing (18 August 2026), NCBI had not yet completed processing of the genome assemblies following their submission in January 2026 and thus they are not yet publicly available through the NCBI database. Therefore, copies of the annotated genome files have been made available through this GitHub repository and will remain available here until they are processed and released by NCBI,
